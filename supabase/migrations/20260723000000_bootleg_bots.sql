@@ -212,7 +212,12 @@ values ('card-art', 'card-art', false, 5242880, array['image/png', 'image/jpeg',
 on conflict (id) do update set public = excluded.public;
 
 create policy "players upload their own card art" on storage.objects for insert to authenticated with check (bucket_id = 'card-art' and (storage.foldername(name))[1] = auth.uid()::text);
-create policy "players read card art they can access" on storage.objects for select to authenticated using (bucket_id = 'card-art');
+create policy "players read card art they can access" on storage.objects for select to authenticated using (
+  bucket_id = 'card-art' and exists (
+    select 1 from public.cards c
+    where c.art_path = name and (c.status = 'approved' or c.creator_id = auth.uid() or public.is_admin())
+  )
+);
 create policy "players replace their own pending art" on storage.objects for update to authenticated using (bucket_id = 'card-art' and owner_id = auth.uid()) with check (bucket_id = 'card-art' and owner_id = auth.uid());
 create policy "players delete their own art" on storage.objects for delete to authenticated using (bucket_id = 'card-art' and owner_id = auth.uid());
 

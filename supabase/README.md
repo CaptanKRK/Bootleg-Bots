@@ -8,7 +8,11 @@ Deploy it with either a Supabase personal access token (`SUPABASE_ACCESS_TOKEN`)
 npx supabase login
 npx supabase link --project-ref tvbgmsfynfxoxiswodid
 npx supabase db push
+npx supabase functions deploy game-command
+npx supabase functions deploy admin-invite
 ```
+
+Set the `SITE_URL` Edge Function secret to `https://captankrk.github.io/Bootleg-Bots/` before inviting players.
 
 After the first invited account is created, promote it exactly once in the Supabase SQL editor:
 

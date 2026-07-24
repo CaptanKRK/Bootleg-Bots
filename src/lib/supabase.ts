@@ -7,6 +7,9 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 
 // This client deliberately uses only the browser-safe publishable key.
 // Server-only Supabase keys must never be imported by frontend code.
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabasePublishableKey)
-  : null
+// A placeholder keeps local builds type-safe before configuration is supplied.
+// UI checks `isSupabaseConfigured` before making any real backend request.
+export const supabase = createClient(
+  supabaseUrl ?? 'https://bootleg-bots-unconfigured.invalid',
+  supabasePublishableKey ?? 'unconfigured-publishable-key',
+)
