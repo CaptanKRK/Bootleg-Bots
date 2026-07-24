@@ -1,32 +1,27 @@
-import { isSupabaseConfigured } from './lib/supabase'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { useAuth } from './auth/AuthProvider'
+import { getCardArtUrl, getCards, reviewCard, submitCard } from './lib/api'
+import type { BotCard, BotMove } from './lib/types'
+import { Sketchpad } from './components/Sketchpad'
+import { supabase } from './lib/supabase'
 
-function App() {
-  return (
-    <main className="landing-page">
-      <section className="hero" aria-labelledby="site-title">
-        <p className="eyebrow">A spectacularly questionable robot card game</p>
-        <h1 id="site-title">Bootleg Bots</h1>
-        <p className="intro">
-          Draw terrible robots. Give them wildly unfair moves. Battle your friends.
-        </p>
-        <div className="status" role="status">
-          <span className={`status-dot ${isSupabaseConfigured ? 'ready' : ''}`} />
-          {isSupabaseConfigured
-            ? 'Game services connected'
-            : 'Game services are being wired up'}
-        </div>
-      </section>
+const move = (): BotMove => ({ id: crypto.randomUUID(), name: '', description: '', effects: [{ type: 'damage', amount: 10, target: 'opponent' }] })
 
-      <section className="coming-soon" aria-labelledby="coming-soon-title">
-        <h2 id="coming-soon-title">In the workshop</h2>
-        <ul>
-          <li>Hand-draw a gloriously bad robot.</li>
-          <li>Submit its stats and ridiculous moves.</li>
-          <li>Get it approved, then fight with friends.</li>
-        </ul>
-      </section>
-    </main>
-  )
+function Shell({ children }: { children: ReactNode }) {
+  const { profile, signOut } = useAuth()
+  return <><header><Link className="brand" to="/">Bootleg Bots</Link><nav><NavLink to="/cards">Catalog</NavLink>{profile && <NavLink to="/create">Create</NavLink>}{profile?.role === 'admin' && <NavLink to="/review">Review</NavLink>}{profile && <NavLink to="/lobbies">Play</NavLink>}</nav><div className="account">{profile ? <><span>{profile.display_name}{profile.role === 'admin' ? ' · Admin' : ''}</span><button onClick={signOut}>Log out</button></> : <Link to="/login">Log in</Link>}</div></header>{children}</>
 }
 
-export default App
+function Home() { return <main className="home"><p className="eyebrow">Horrible robots. Extremely serious fights.</p><h1>Bootleg<br />Bots</h1><p className="lead">Draw a disaster. Give it suspiciously powerful moves. Send it into battle with your friends.</p><div className="actions"><Link className="primary" to="/cards">See the bot pile</Link><Link className="secondary" to="/create">Make a bot</Link></div></main> }
+
+function Login() { const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [message, setMessage] = useState(''); const nav = useNavigate(); const submit = async (e: FormEvent) => { e.preventDefault(); if (!supabase) return; const { error } = await supabase.auth.signInWithPassword({ email, password }); if (error) setMessage(error.message); else nav('/cards') }; return <main className="panel auth"><h2>Welcome back, mechanic.</h2><p>Use the account an admin invited.</p><form onSubmit={submit}><label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} required /></label>{message && <p className="error">{message}</p>}<button className="primary">Log in</button></form></main> }
+
+function CardArt({ card }: { card: BotCard }) { const [url, setUrl] = useState(''); useEffect(() => { getCardArtUrl(card.art_path).then(setUrl).catch(() => setUrl('')) }, [card.art_path]); return <div className="card-art">{url ? <img src={url} alt={`${card.name} hand-drawn robot`} /> : 'Loading bot art…'}</div> }
+function CardTile({ card, review }: { card: BotCard; review?: boolean }) { const { profile } = useAuth(); const [feedback, setFeedback] = useState(''); const [busy, setBusy] = useState(false); const [done, setDone] = useState(false); const decide = async (decision: 'approved' | 'rejected') => { if (!profile || !card.version) return; setBusy(true); try { await reviewCard(card.id, decision, feedback, profile.id, card.version); setDone(true) } finally { setBusy(false) } }; return <article className="bot-card"><CardArt card={card}/><div className="card-copy"><div className="card-title"><h3>{card.name}</h3><b>{card.version?.health ?? '?'} HP</b></div><p className="byline">built by {card.creator?.display_name ?? 'a mysterious mechanic'}</p><ul>{card.version?.moves.map(m => <li key={m.id}><strong>{m.name}</strong> — {m.description}</li>)}</ul>{card.review_feedback && <p className="feedback">Admin note: {card.review_feedback}</p>}{review && !done && <div className="review"><textarea placeholder="Optional feedback" value={feedback} onChange={e => setFeedback(e.target.value)} /><button disabled={busy} onClick={() => decide('approved')}>Approve</button><button disabled={busy} className="danger" onClick={() => decide('rejected')}>Reject</button></div>}{done && <p className="success">Reviewed.</p>}</div></article> }
+function Catalog() { const [cards, setCards] = useState<BotCard[]>([]); const [error, setError] = useState(''); useEffect(() => { getCards('approved').then(setCards).catch(e => setError(e.message)) }, []); return <main className="page"><div className="page-heading"><p className="eyebrow">Approved for chaos</p><h2>Bot catalog</h2></div>{error && <p className="error">{error}</p>}{cards.length ? <section className="card-grid">{cards.map(card => <CardTile key={card.id} card={card}/>)}</section> : <div className="empty">No approved bots yet. Make one, then convince an admin it is safe enough for combat.</div>}</main> }
+function CreateCard() { const { profile } = useAuth(); const nav = useNavigate(); const [name, setName] = useState(''); const [health, setHealth] = useState(100); const [moves, setMoves] = useState<BotMove[]>([move()]); const [notes, setNotes] = useState(''); const [art, setArt] = useState<Blob | null>(null); const [message, setMessage] = useState(''); const updateMove = (index: number, key: 'name' | 'description', value: string) => setMoves(ms => ms.map((m, i) => i === index ? { ...m, [key]: value } : m)); const submit = async (e: FormEvent) => { e.preventDefault(); if (!profile || !art) return setMessage('Draw your bot before submitting it.'); try { await submitCard({ name, health, moves, mechanicNotes: notes, art, userId: profile.id }); nav('/cards') } catch (error: any) { setMessage(error.message) } }; if (!profile) return <Navigate to="/login" replace />; return <main className="page"><div className="page-heading"><p className="eyebrow">Patent pending</p><h2>Build a bot</h2></div><form className="create-form" onSubmit={submit}><section><label>Bot name<input value={name} onChange={e => setName(e.target.value)} maxLength={60} required /></label><label>Health<input type="number" min="1" max="999" value={health} onChange={e => setHealth(Number(e.target.value))} required /></label><Sketchpad onChange={setArt}/></section><section><h3>Moves</h3>{moves.map((m, i) => <div className="move-editor" key={m.id}><input placeholder="Move name" value={m.name} onChange={e => updateMove(i, 'name', e.target.value)} required /><textarea placeholder="What ridiculous thing does it do?" value={m.description} onChange={e => updateMove(i, 'description', e.target.value)} required /><label>Damage<input type="number" min="0" value={m.effects[0]?.amount ?? 0} onChange={e => setMoves(ms => ms.map((x, j) => j === i ? { ...x, effects: [{ ...x.effects[0], type: 'damage', amount: Number(e.target.value), target: 'opponent' }] } : x))}/></label><button type="button" onClick={() => setMoves(ms => ms.filter((_, j) => j !== i))} disabled={moves.length === 1}>Remove move</button></div>)}{moves.length < 4 && <button type="button" onClick={() => setMoves(ms => [...ms, move()])}>Add move</button>}<label>Mechanic notes<textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Describe any weird immunity, dodge, or custom rule for an admin to implement." /></label>{message && <p className="error">{message}</p>}<button className="primary">Submit for approval</button></section></form></main> }
+function Review() { const { profile } = useAuth(); const [cards, setCards] = useState<BotCard[]>([]); useEffect(() => { if (profile?.role === 'admin') getCards('pending').then(setCards) }, [profile]); if (profile?.role !== 'admin') return <Navigate to="/cards" replace />; return <main className="page"><div className="page-heading"><p className="eyebrow">Safety inspection</p><h2>Pending bots</h2></div><section className="card-grid">{cards.map(c => <CardTile card={c} key={c.id} review />)}</section>{!cards.length && <div className="empty">Nothing dangerous is awaiting review.</div>}</main> }
+function Lobbies() { return <main className="page"><div className="page-heading"><p className="eyebrow">Private battles</p><h2>Play with friends</h2></div><div className="empty"><p>Lobby creation and the live battle board are being connected to the secure game function.</p><p>Matches will deal ten unique approved bots to each player, hide hands, reveal selected active bots, and resolve all moves server-side.</p></div></main> }
+function Protected({ children }: { children: ReactNode }) { const { loading, session } = useAuth(); if (loading) return <main className="empty">Waking the robots…</main>; return session ? <>{children}</> : <Navigate to="/login" replace /> }
+export default function App() { return <Shell><Routes><Route path="/" element={<Home/>}/><Route path="/login" element={<Login/>}/><Route path="/cards" element={<Catalog/>}/><Route path="/create" element={<Protected><CreateCard/></Protected>}/><Route path="/review" element={<Protected><Review/></Protected>}/><Route path="/lobbies" element={<Protected><Lobbies/></Protected>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes></Shell> }
